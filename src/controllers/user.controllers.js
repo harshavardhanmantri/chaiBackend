@@ -4,6 +4,7 @@ import {User} from "../models/user.models.js";
 import {uploadOnCloudinary} from "../utils/cloudinary.js";
 import {ApiResponse} from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -144,8 +145,8 @@ const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user._id,
     {
-      $set: {
-        refreshToken: undefined,
+      $unset: {
+        refreshToken: 1,
       },
     },
     {
@@ -176,7 +177,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       process.env.REFRESH_TOKEN_SECRET
     );
 
-    const user = User.findById(decodedToken?._id);
+    const user = await User.findById(decodedToken?._id);
     if (!user) {
       throw ApiError(401, "Invalid refresh Token");
     }
@@ -194,8 +195,8 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 
     return res
       .status(200)
-      .cookie("accessToken", accessToken)
-      .cookie("newrefreshToken", newrefreshToken)
+      .cookie("accessToken", accessToken, options)
+      .cookie("newrefreshToken", newrefreshToken, options)
       .json(
         new ApiResponse(
           200,
@@ -212,6 +213,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
   const {oldPassword, newPassword} = req.body;
   const user = await User.findById(req.user?._id);
   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+  console.log(oldPassword);
   if (!isPasswordCorrect) {
     throw new ApiError(400, "Invalid old password");
   }
@@ -237,7 +239,7 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
   }
   const user = await User.findByIdAndUpdate(
     req.user?._id,
-    {$set: fullname, email},
+    {$set: {fullname, email}},
     {
       new: true,
     }
@@ -295,6 +297,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
   if (!username?.trim) {
     throw new ApiError(400, "User name is missing");
   }
+
   const channel = await User.aggregate([
     {
       $match: {
@@ -305,7 +308,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
       $lookup: {
         from: "subscriptions",
         localField: "_id",
-        foriegnField: "channel",
+        foreignField: "channel",
         as: "subscribers",
       },
     },
@@ -313,20 +316,20 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
       $lookup: {
         from: "subscriptions",
         localField: "_id",
-        foriegnField: "subscriber",
-        as: "subscribedto",
+        foreignField: "subscriber",
+        as: "subscribedTo",
       },
     },
     {
       $addFields: {
         subscribersCount: {
-          $size: "subscribers",
+          $size: {$ifNull: ["$subscribers", []]},
         },
         channelsSubscribedToCount: {
-          $size: "subscribedto",
+          $size: {$ifNull: ["$subscribedto", []]},
         },
         isSubscribed: {
-          $condition: {
+          $cond: {
             if: {$in: [req.user?._id, "$subscribers.subscriber"]},
             then: true,
             else: false,
@@ -367,14 +370,14 @@ const getWatchHistory = asyncHandler(async (req, res) => {
       $lookup: {
         from: "videos",
         localField: "watchHistory",
-        foriegnField: "_id",
+        foreignField: "_id",
         as: "watchHistory",
         pipeline: [
           {
             $lookup: {
               from: "User",
               localField: "owner",
-              foriegnField: "_id",
+              foreignField: "_id",
               as: "owner",
               pipeline: [
                 {
@@ -398,9 +401,16 @@ const getWatchHistory = asyncHandler(async (req, res) => {
       },
     },
   ]);
+  console.log(user);
   return res
     .status(200)
-    .json(200, user[0].watchHistory, "WatchHistory fetched successfully");
+    .json(
+      new ApiResponse(
+        200,
+        user[0].watchHistory,
+        "WatchHistory fetched successfully"
+      )
+    );
 });
 
 export {
