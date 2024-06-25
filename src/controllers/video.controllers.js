@@ -29,7 +29,7 @@ const publishAVideo = asyncHandler(async (req, res) => {
     throw new ApiError(401, "Video didn't Upload");
   }
   if (!thumbnail) {
-    throw new ApiError(401, "Video didn't Upload");
+    throw new ApiError(401, "thumbnail didn't Upload");
   }
   const video = await Video.create({
     title,
